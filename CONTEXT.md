@@ -1,11 +1,17 @@
 # OcéEns
 
-Plateforme d'évaluation des enseignements de l'EPF : des sondages sont créés par filière, les étudiants y répondent, et les réponses sont exportées, visualisées et synthétisées.
+EPF course evaluation platform: surveys are created by study track, students complete them, and the responses are exported, visualized, and summarized.
 
-## Langage
+## Language
 
-### Authentification
+### Authentication
 
-**Connexion de développement** (`AUTH_MODE=dev`) :
-Connexion sans fournisseur d'identité : on choisit l'adresse mail d'un utilisateur et on est connecté en tant que lui, sans preuve d'identité. Elle n'existe que lorsque `AUTH_MODE=dev` et ne doit jamais servir en production.
-_À éviter_ : impersonation, usurpation, fake login
+**Development login** (`AUTH_MODE=dev`):
+Login without an identity provider: you select a user's email address and log in as that user, without proof of identity. This mode exists only when `AUTH_MODE=dev` and must never be used in production.
+_Avoid_: impersonation, identity theft, fake login.
+
+### French Vocabulary
+
+**sondage**: It means "summary" in English. It should not be translate to English in the whole project
+
+**synthèse**: It means "survey" in English. It should not be translate to English in the whole project

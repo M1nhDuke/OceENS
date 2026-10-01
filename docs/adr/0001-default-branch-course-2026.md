@@ -1,0 +1,3 @@
+# `course-2026` becomes the default branch for the semester
+
+For the 2026–27 *Complex Web Services* course, around twenty students are forking OcéEns; specifically, they are forking the default branch. Consequently, `course-2026` becomes the repository's default branch, serving as the source for forks and the target for Pull Requests (including the development connection, #82, and role-based seeding, #84). The `main` branch remains untouched throughout the semester to provide students with a stable base and avoid mixing course-specific code into it; no `main` → `course-2026` synchronization is planned until the end of the semester.

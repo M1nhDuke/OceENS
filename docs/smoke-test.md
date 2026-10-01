@@ -1,48 +1,46 @@
-# Smoke test manuel
+# Manual smoke test
 
-Le dépôt ne contient pas de suite de tests automatisés ni de CI (les premiers
-tests sont #85, la CI #78). Cette procédure se passe entièrement **à
-l'extérieur du processus** : on part d'un clone neuf, on lance l'application
-et on observe ce qu'elle répond et avec quel code de sortie.
+The repository contains neither an automated test suite nor CI (the initial
+test setup is tracked in #85, CI in #78). This procedure is carried out entirely
+**outside the standard process**: starting from a fresh clone, the application
+is launched, and its response and exit code are observed.
 
-À dérouler avant de proposer un changement qui touche au démarrage, à la
-configuration, aux dépendances ou au conteneur.
+Perform this check before proposing any changes affecting startup,
+configuration, dependencies, or the container.
 
-## Conventions selon le système
+## System-specific conventions
 
-Les commandes sont données pour **Windows (PowerShell)** puis pour **macOS /
-Linux (bash)**. Seules quatre choses changent :
+Commands are provided for **Windows (PowerShell)** followed by **macOS /
+Linux (bash)**. Only four elements differ:
 
 | | Windows (PowerShell) | macOS / Linux (bash) |
 |---|---|---|
-| Interpréteur de l'environnement virtuel | `.venv\Scripts\python.exe` | `.venv/bin/python` |
-| Définir une variable pour une commande | `$env:VAR = "x"` puis `Remove-Item Env:VAR` | `VAR=x commande` |
-| Lire le code de sortie | `$LASTEXITCODE` | `echo $?` |
-| Copier / renommer un fichier | `Copy-Item`, `Rename-Item` | `cp`, `mv` |
+| Virtual environment interpreter | `.venv\Scripts\python.exe` | `.venv/bin/python` |
+| Set variable for a command | `$env:VAR = "x"` then `Remove-Item Env:VAR` | `VAR=x command` |
+| Read exit code | `$LASTEXITCODE` | `echo $?` |
+| Copy / rename file | `Copy-Item`, `Rename-Item` | `cp`, `mv` |
 
-Les commandes appellent l'interpréteur **par son chemin** (`.venv\Scripts\python.exe`)
-plutôt que d'activer l'environnement : sous Windows, `Activate.ps1` est bloqué
-par défaut par la politique d'exécution de PowerShell, et ce n'est pas le sujet
-de ce test.
+Commands invoke the interpreter **via its path** (`.venv\Scripts\python.exe`)
+rather than activating the environment; on Windows, `Activate.ps1` is blocked
+by default due to PowerShell's execution policy, and that is outside the
+scope of this test. ## Static checks
 
-## Vérifications statiques
-
-Identique sur les deux systèmes (une seule ligne, sans continuation) :
+Identical on both systems (single line, no line continuation):
 
 ```
 python -m compileall -q main.py sondage_loader.py survey_loader_from_xlsx.py summaries_generator_daemon.py core models routers services
 git diff --check
 ```
 
-## 1. Démarrage local, sans credentials
+## 1. Local startup, without credentials
 
-Dans un clone neuf de la branche, avec un environnement virtuel vide.
+In a fresh clone of the branch, with an empty virtual environment.
 
 **Windows (PowerShell)**
 
 ```powershell
 Copy-Item .env.example .env
-py -3.12 -m venv .venv
+python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 .venv\Scripts\uvicorn.exe main:app --port 8000
 ```
@@ -56,124 +54,123 @@ python3 -m venv .venv
 .venv/bin/uvicorn main:app --port 8000
 ```
 
-Attendu, sans aucun credential Entra ni clé LLM :
+Expected behavior, without any Entra credentials or LLM keys:
 
-| Route | Réponse |
+| Route | Response |
 |---|---|
 | `GET /` | 200 |
 | `GET /dev/login` | 200 |
-| `GET /nope` | 303 vers `/` (middleware 404 → `/`) |
+| `GET /nope` | 303 to `/` (404 middleware → `/`) |
 
-Les logs de démarrage créent les tables, insèrent le jeu de démonstration et
-ne contiennent ni erreur ni trace d'exception.
+Startup logs show table creation and insertion of the demo dataset,
+with no errors or exception traces.
 
-## 2. Démarrage avec Docker
+## 2. Startup with Docker
 
-Il faut un **démon Docker en cours d'exécution** — Docker Desktop sous Windows
-(avec le backend WSL 2) comme sous macOS, le démon natif sous Linux. La
-commande est la même partout :
+Requires a **running Docker daemon** — Docker Desktop on Windows
+(using the WSL 2 backend) or macOS, or the native daemon on Linux. The
+command is the same everywhere:
 
 ```
 docker compose up --build
 ```
 
-Attendu : l'image se construit, le conteneur démarre sans redémarrer en
-boucle, et `/`, `/dev/login` et `/nope` répondent comme à l'étape 1.
+Expected outcome: the image builds, the container starts without entering a
+restart loop, and `/`, `/dev/login`, and `/nope` respond just as they did in step 1.
 
-Sans `.env`, `docker compose` échoue avec `env file .env not found` — c'est
-voulu, la première commande d'un fork est la copie de `.env.example`.
+Without a `.env` file, `docker compose` fails with `env file .env not found`—this
+is intentional; the first step after forking the repo is to copy `.env.example`.
 
-Pour arrêter et nettoyer :
+To stop and clean up:
 
 ```
 docker compose down
 ```
 
-## 3. Codes de sortie sur configuration invalide
+## 3. Exit codes for invalid configuration
 
-Une configuration de démarrage invalide doit sortir en **code 1**, pour qu'un
-superviseur ou une CI voie l'échec.
+An invalid startup configuration must exit with **code 1** so that a
+supervisor or CI system detects the failure.
 
-Le `.env` doit être écarté pour les deux derniers cas : `load_dotenv()` y relirait
-`AUTH_MODE=dev` et l'application démarrerait normalement, en code 0.
+The `.env` file must be set aside for the last two cases; otherwise,
+`load_dotenv()` would read `AUTH_MODE=dev` from it, and the application
+would start normally with exit code 0.
 
 **Windows (PowerShell)**
 
 ```powershell
-# AUTH_MODE invalide
+# Invalid AUTH_MODE
 $env:AUTH_MODE = "bogus"
 .venv\Scripts\python.exe -c "import main"; $LASTEXITCODE   # 1
 Remove-Item Env:AUTH_MODE
 
-# ENTRA_* manquantes, sans .env
+# Missing ENTRA_* variables, without .env
 Rename-Item .env .env.bak
-'AUTH_MODE','ENTRA_CLIENT_ID','ENTRA_CLIENT_SECRET','ENTRA_TENANT_ID' |
-  ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
+'AUTH_MODE','ENTRA_CLIENT_ID','ENTRA_CLIENT_SECRET','ENTRA_TENANT_ID' | 
+ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
 .venv\Scripts\python.exe -c "import main"; $LASTEXITCODE   # 1
 
-# SECRET_KEY manquante en entra, sans .env
-$env:ENTRA_CLIENT_ID = "x"; $env:ENTRA_CLIENT_SECRET = "x"; $env:ENTRA_TENANT_ID = "x"
+# Missing SECRET_KEY in Entra mode, without .env
+$env:ENTRA_CLIENT_ID = "x"; $env:ENTRA_CLIENT_SECRET = "x";
+``` $env:ENTRA_TENANT_ID = "x"
 Remove-Item Env:SECRET_KEY -ErrorAction SilentlyContinue
 .venv\Scripts\python.exe -c "import main"; $LASTEXITCODE   # 1
-'ENTRA_CLIENT_ID','ENTRA_CLIENT_SECRET','ENTRA_TENANT_ID' |
-  ForEach-Object { Remove-Item "Env:$_" }
+'ENTRA_CLIENT_ID','ENTRA_CLIENT_SECRET','ENTRA_TENANT_ID' | 
+ForEach-Object { Remove-Item "Env:$_" }
 Rename-Item .env.bak .env
 ```
 
 **macOS / Linux (bash)**
 
 ```bash
-# AUTH_MODE invalide
-AUTH_MODE=bogus .venv/bin/python -c "import main"; echo $?   # 1
+# Invalid AUTH_MODE
+AUTH_MODE=bogus .venv/bin/python -c "import main"; echo $? # 1
 
-# ENTRA_* manquantes, sans .env
+# Missing ENTRA_* variables, without .env
 mv .env .env.bak
 env -u AUTH_MODE -u ENTRA_CLIENT_ID -u ENTRA_CLIENT_SECRET -u ENTRA_TENANT_ID \
-  .venv/bin/python -c "import main"; echo $?   # 1
+.venv/bin/python -c "import main"; echo $? # 1
 
-# SECRET_KEY manquante en entra, sans .env
+# Missing SECRET_KEY for entra mode, without .env
 env -u AUTH_MODE -u SECRET_KEY ENTRA_CLIENT_ID=x ENTRA_CLIENT_SECRET=x ENTRA_TENANT_ID=x \
-  .venv/bin/python -c "import main"; echo $?   # 1
+.venv/bin/python -c "import main"; echo $? # 1
 mv .env.bak .env
 ```
 
-Attendu : la ligne de log `INVALID AUTH_MODE 'bogus'` pour le premier cas,
-`MISSING ENTRA INFO. Please check .env` pour le deuxième,
-`MISSING SECRET_KEY. Required with AUTH_MODE=entra, please check .env` pour le
-troisième. En témoin, `AUTH_MODE=dev` sort en 0, même sans `SECRET_KEY`.
+Expected output: the log line `INVALID AUTH_MODE 'bogus'` for the first case,
+`MISSING ENTRA INFO. Please check .env` for the second,
+`MISSING SECRET_KEY. Required with AUTH_MODE=entra, please check .env` for the
+third. As a reference, `AUTH_MODE=dev` exits with code 0, even without a `SECRET_KEY`.
 
-## 4. Absence de clé LLM
+## 4. Missing LLM key
 
-`.env.example` livre `LLM_API_KEY` **vide** : l'application démarre
-normalement, seules les synthèses sont indisponibles. Avec le daemon
-`summaries_generator_daemon.py` lancé, une demande de synthèse est marquée en
-erreur de configuration (`http_status` 500, « variable d'environnement
-absente ou vide ») et aucun appel n'est fait au fournisseur.
+`.env.example` provides an **empty** `LLM_API_KEY`: the application starts
+normally, but summaries are unavailable. With the daemon `summaries_generator_daemon.py` is running, a summarization request is flagged with a
+configuration error (`http_status` 500, "environment variable
+missing or empty") and no call is made to the provider.
 
-## 5. Avec une clé LLM
+## 5. Using an LLM key
 
-Chaque étudiant récupère sa propre clé sur <https://locallm.mde.epf.fr> en se
-connectant avec son compte EPF, puis la renseigne dans son `.env` :
+Each student retrieves their own key from <https://locallm.mde.epf.fr> by
+logging in with their EPF account, then enters it into their `.env` file:
 
 ```
-LLM_API_KEY=<votre clé>
+LLM_API_KEY=<your key>
 ```
 
-Vérification rapide, sans passer par l'interface. **La clé doit se trouver dans
-l'environnement de cette commande, et pas seulement dans le `.env`** :
-`load_dotenv()` est appelé par l'application, par le daemon et par le module
-d'authentification, mais pas par `services/llm_client.py`, seul module importé
-ici. Sans le préfixe ci-dessous, la commande lève `LLMConfigError` quel que
-soit le contenu du `.env`.
+Quick check, without using the interface. **The key must be present in
+the command's environment, not just in the `.env` file**:
+`load_dotenv()` is called by the application, the daemon, and the
+authentication module, but not by `services/llm_client.py`—the only module
+imported here. Without the prefix shown below, the command raises an
+`LLMConfigError` regardless of the `.env` file's contents.
 
-La ligne `python -c` tient sur une ligne et est identique sur les deux
-systèmes ; seuls le chemin de l'interpréteur et la façon de définir la
-variable changent.
-
-**Windows (PowerShell)**
+The `python -c` command fits on a single line and is identical on both
+systems; only the interpreter path and the method of defining the
+variable differ. **Windows (PowerShell)**
 
 ```powershell
-$env:LLM_API_KEY = "<votre clé>"
+$env:LLM_API_KEY = "<your key>"
 .venv\Scripts\python.exe -c "from types import SimpleNamespace; from services import llm_client as c; p = SimpleNamespace(name='Ollama EPF', api_type='ollama', base_url='https://locallm.mde.epf.fr/ollama', api_key_env='LLM_API_KEY', default_model='gemma4:26b'); print(c.check_model(p, 'gemma4:26b')); print(c.ping_generation(p, 'gemma4:26b'))"
 Remove-Item Env:LLM_API_KEY
 ```
@@ -181,23 +178,15 @@ Remove-Item Env:LLM_API_KEY
 **macOS / Linux (bash)**
 
 ```bash
-LLM_API_KEY=<votre clé> .venv/bin/python -c "from types import SimpleNamespace; from services import llm_client as c; p = SimpleNamespace(name='Ollama EPF', api_type='ollama', base_url='https://locallm.mde.epf.fr/ollama', api_key_env='LLM_API_KEY', default_model='gemma4:26b'); print(c.check_model(p, 'gemma4:26b')); print(c.ping_generation(p, 'gemma4:26b'))"
+LLM_API_KEY=<your key> .venv/bin/python -c "from types import SimpleNamespace; from services import llm_client as c; p = SimpleNamespace(name='Ollama EPF', api_type='ollama', base_url='https://locallm.mde.epf.fr/ollama', api_key_env='LLM_API_KEY', default_model='gemma4:26b'); print(c.check_model(p, 'gemma4:26b')); print(c.ping_generation(p, 'gemma4:26b'))"
 ```
 
-Attendu : `True`, puis `(True, None, None)`. `check_model` seul ne suffit pas —
-la liste des modèles répond encore normalement avec un compte sans crédit,
-seul l'appel de génération le révèle. Avec une valeur vide, ou sans la
-variable, la même commande lève `LLMConfigError` : c'est le comportement de
-l'étape 4.
+Expected output: `True`, followed by `(True, None, None)`. `check_model` alone is not enough—
+the model list still responds normally with an account that has no credit;
+only the generation call reveals the issue. With an empty value, or if the variable is missing, the same command raises `LLMConfigError`: this is the behavior from step 4.
 
-Ensuite, bout en bout : demander la génération des synthèses d'un sondage avec
-`summaries_generator_daemon.py` lancé. Cette moitié-là n'a pas besoin du
-préfixe : le daemon, lui, lit le `.env`. Les lignes passent de `http_status` 0
-à 200, une à la fois (le daemon est séquentiel), et la synthèse s'affiche en
-HTML. Ne jamais committer la clé : `.env` est ignoré par Git.
+Next, an end-to-end test: request the generation of survey summaries while `summaries_generator_daemon.py` is running. This part does not require the prefix, as the daemon reads the `.env` file itself. The lines transition from `http_status` 0 to 200, one at a time (since the daemon operates sequentially), and the summary is displayed in HTML. Never commit the key; the `.env` file is ignored by Git.
 
-## Ensuite
+## Next steps
 
-Tester manuellement les routes concernées par le changement, sur une base
-SQLite jetable (jamais une copie de production), avec les rôles et les
-statuts de sondage pertinents.
+Manually test the routes affected by the change using a disposable SQLite database (never a production copy), employing the relevant roles and survey statuses.
